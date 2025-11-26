@@ -119,6 +119,8 @@ let createNewUser = (data) => {
                     errMessage: 'Your email is already used!'
                 })
             } else {
+                //console.log('Creating user with roleId:', data.roleId);
+                //console.log('Full data received:', data);
                 let hashPasswordFromBcrypt = await hashUserPassword(data.password);
                 await db.User.create({
                     email: data.email,
