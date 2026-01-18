@@ -1,6 +1,7 @@
 import db from '../models/index';
 require('dotenv').config();
 import _ from 'lodash';
+import emailService from '../services/emailService';
 
 const MAX_NUMBER_SCHEDULE = process.env.MAX_NUMBER_SCHEDULE;
 
@@ -17,7 +18,18 @@ let getTopDoctorHome = (limitInput) => {
                 },
                 include: [
                     { model: db.Allcode, as: 'positionData', attributes: ['valueEn', 'valueVi'] },
-                    { model: db.Allcode, as: 'genderData', attributes: ['valueEn', 'valueVi'] }
+                    { model: db.Allcode, as: 'genderData', attributes: ['valueEn', 'valueVi'] },
+                    {
+                        model: db.Doctor_Infor,
+                        attributes: ['specialtyId'],
+                        include: [
+                            {
+                                model: db.Specialty,
+                                as: 'specialtyData',
+                                attributes: ['name']
+                            }
+                        ]
+                    }
                 ],
                 nest: true,
                 raw: true
@@ -406,6 +418,9 @@ let getListPatientForDoctor = (doctorId, date) => {
                         include: [
                             { model: db.Allcode, as: 'genderData', attributes: ['valueEn', 'valueVi'] }
                         ],
+                    },
+                    {
+                        model: db.Allcode, as: 'timeTypeDataPatient', attributes: ['valueEn', 'valueVi']
                     }
 
                 ],
@@ -424,6 +439,87 @@ let getListPatientForDoctor = (doctorId, date) => {
     });
 };
 
+let sendRemedy = (data) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            if (!data.email || !data.doctorId || !data.patientId || !data.timeType) {
+                return resolve({
+                    errCode: 1,
+                    errMessage: 'Missing required parameter'
+                });
+            }
+            else {
+                //update patinet status
+                let appointment = await db.Booking.findOne({
+                    where: {
+                        doctorId: data.doctorId,
+                        patientId: data.patientId,
+                        timeType: data.timeType,
+                        statusId: 'S2'
+                    },
+                    raw: false
+                })
+
+                if (appointment) {
+                    appointment.statusId = 'S3'
+                    await appointment.save();
+                }
+
+                //send email remedy
+                await emailService.sendAttachment(data)
+
+                resolve({
+                    errCode: 0,
+                    errMessage: 'Ok'
+                });
+            }
+        } catch (e) {
+            reject(e);
+        }
+    });
+};
+
+let cancelBooking = async (data) => {
+    try {
+        const result = await db.Booking.update(
+            { statusId: 'S4' },
+            {
+                where: {
+                    doctorId: data.doctorId,
+                    patientId: data.patientId,
+                    timeType: data.timeType,
+                    date: data.date,
+                    statusId: 'S2'
+                }
+            }
+        );
+
+        if (result[0] === 0) {
+            return {
+                errCode: 1,
+                errMessage: 'Appointment not found'
+            };
+        }
+
+        try {
+            await emailService.sendCancelEmail(data);
+        } catch (e) {
+            console.log('Send cancel email failed:', e);
+        }
+
+        return {
+            errCode: 0,
+            errMessage: 'Cancel success'
+        };
+    } catch (e) {
+        return {
+            errCode: -1,
+            errMessage: 'Error from server'
+        };
+    }
+};
+
+
 module.exports = {
     getTopDoctorHome: getTopDoctorHome,
     getAllDoctors: getAllDoctors,
@@ -434,5 +530,8 @@ module.exports = {
     getExtraInforDoctorById: getExtraInforDoctorById,
     getProfileDoctorById: getProfileDoctorById,
     getListPatientForDoctor: getListPatientForDoctor,
+    sendRemedy: sendRemedy,
+    cancelBooking: cancelBooking,
+
 
 }
