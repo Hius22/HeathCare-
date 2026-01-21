@@ -144,6 +144,45 @@ let cancelBooking = async (req, res) => {
     }
 };
 
+let deleteScheduleDoctor = async (req, res) => {
+    try {
+        let scheduleId = req.query.id;
+
+        if (!scheduleId) {
+            return res.status(200).json({
+                errCode: 1,
+                errMessage: 'Missing required parameter!'
+            });
+        }
+
+        let response = await doctorService.deleteScheduleDoctor(scheduleId);
+
+        return res.status(200).json(response);
+
+    } catch (e) {
+        console.error(e);
+        return res.status(200).json({
+            errCode: -1,
+            errMessage: 'Error from the server'
+        });
+    }
+}
+
+let getAllSchedule = async (req, res) => {
+    try {
+        let response = await doctorService.getAllSchedule();
+
+        return res.status(200).json(response);
+
+    } catch (e) {
+        console.error(e);
+        return res.status(200).json({
+            errCode: -1,
+            errMessage: 'Error from the server'
+        });
+    }
+}
+
 module.exports = {
     getTopDoctorHome: getTopDoctorHome,
     getAllDoctors: getAllDoctors,
@@ -156,6 +195,7 @@ module.exports = {
     getListPatientForDoctor: getListPatientForDoctor,
     sendRemedy: sendRemedy,
     cancelBooking: cancelBooking,
-
+    deleteScheduleDoctor: deleteScheduleDoctor,
+    getAllSchedule: getAllSchedule,
 
 }

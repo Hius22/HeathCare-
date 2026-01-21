@@ -2,6 +2,7 @@ import db from '../models/index';
 require('dotenv').config();
 import _ from 'lodash';
 import emailService from '../services/emailService';
+import { Op } from 'sequelize';
 
 const MAX_NUMBER_SCHEDULE = process.env.MAX_NUMBER_SCHEDULE;
 
@@ -406,7 +407,10 @@ let getListPatientForDoctor = (doctorId, date) => {
 
             let data = await db.Booking.findAll({
                 where: {
-                    statusId: 'S2', // đã xác nhận
+                    //statusId: 'S2', // đã xác nhận
+                    statusId: {
+                        [Op.in]: ['S2', 'S3', 'S4']
+                    },
                     doctorId: doctorId,
                     date: date
                 },
@@ -421,6 +425,11 @@ let getListPatientForDoctor = (doctorId, date) => {
                     },
                     {
                         model: db.Allcode, as: 'timeTypeDataPatient', attributes: ['valueEn', 'valueVi']
+                    },
+                    {
+                        model: db.Allcode,
+                        as: 'statusData',
+                        attributes: ['valueEn', 'valueVi']
                     }
 
                 ],
