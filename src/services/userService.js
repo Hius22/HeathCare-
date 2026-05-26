@@ -6,7 +6,7 @@ const salt = bcrypt.genSaltSync(10);
 let hashUserPassword = (password) => {
     return new Promise(async (resolve, reject) => {
         try {
-            let hashPassword = await bcrypt.hashSync(password, salt);
+            let hashPassword = await bcrypt.hash(password, salt);
             resolve(hashPassword);
         } catch (e) {
             reject(e);
@@ -22,7 +22,7 @@ let handleUserLogin = (email, password) => {
             if (isExist) {
                 //user already exist
                 let user = await db.User.findOne({
-                    attributes: ['id', 'email', 'roleId', 'password', 'firstName', 'lastName'],
+                    attributes: ['id', 'email', 'roleId', 'password', 'firstName', 'lastName', 'image'],
                     where: { email: email },
                     raw: true,
 
@@ -41,6 +41,11 @@ let handleUserLogin = (email, password) => {
                         userData.errMessage = 'OK';
 
                         delete user.password;
+                        if (user.image) {
+                            try {
+                                user.image = Buffer.from(user.image, 'base64').toString('binary');
+                            } catch (e) { }
+                        }
                         userData.user = user;
                     }
                     else {
@@ -90,7 +95,13 @@ let getAllUsers = (userId) => {
                 users = await db.User.findAll({
                     attributes: {
                         exclude: ['password']
-                    }
+                    },
+                    include: [
+                        { model: db.Allcode, as: 'genderData', attributes: ['valueVi', 'valueEn'] },
+                        { model: db.Allcode, as: 'positionData', attributes: ['valueVi', 'valueEn'] }
+                    ],
+                    raw: false,
+                    nest: true
                 })
             }
             if (userId && userId !== 'ALL') {
@@ -98,7 +109,13 @@ let getAllUsers = (userId) => {
                     where: { id: userId },
                     attributes: {
                         exclude: ['password']
-                    }
+                    },
+                    include: [
+                        { model: db.Allcode, as: 'genderData', attributes: ['valueVi', 'valueEn'] },
+                        { model: db.Allcode, as: 'positionData', attributes: ['valueVi', 'valueEn'] }
+                    ],
+                    raw: false,
+                    nest: true
                 })
             }
             resolve(users)
@@ -148,24 +165,28 @@ let createNewUser = (data) => {
 
 let deleteUser = (userId) => {
     return new Promise(async (resolve, reject) => {
-        let foundUser = await db.User.findOne({
-            where: { id: userId }
-        })
-        if (!foundUser) {
-            resolve({
-                errCode: 2,
-                errMessage: `The user isn't exist`
+        try {
+            let foundUser = await db.User.findOne({
+                where: { id: userId }
             })
+            if (!foundUser) {
+                resolve({
+                    errCode: 2,
+                    errMessage: `The user isn't exist`
+                })
+            } else {
+                await db.User.destroy({
+                    where: { id: userId }
+                });
+
+                resolve({
+                    errCode: 0,
+                    message: 'The user is deleted'
+                })
+            }
+        } catch (e) {
+            reject(e);
         }
-
-        await db.User.destroy({
-            where: { id: userId }
-        });
-
-        resolve({
-            errCode: 0,
-            message: 'The user is deleted'
-        })
     })
 }
 

@@ -10,8 +10,8 @@ module.exports = (sequelize, DataTypes) => {
          * The `models/index` file will call this method automatically.
          */
         static associate(models) {
-            // define association here
             Specialty.hasMany(models.Doctor_Infor, { foreignKey: 'specialtyId' });
+            Specialty.hasMany(models.Doctor_Clinic_Specialty, { foreignKey: 'specialtyId', as: 'doctorSpecialties' });
         }
     };
     Specialty.init({
@@ -23,6 +23,8 @@ module.exports = (sequelize, DataTypes) => {
     }, {
         sequelize,
         modelName: 'Specialty',
+        freezeTableName: true,
+        tableName: 'specialties'
     });
     return Specialty;
 };

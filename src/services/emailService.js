@@ -110,6 +110,8 @@ let getBodyHTMLEmailRemedy = (dataSend) => {
             <p>Bạn nhận được email này vì đã hoàn tất buổi khám bệnh bên BookingCare</p>
             <p>Thông tin chi tiết về <b>đơn thuốc</b> và <b>hóa đơn</b> đã được đính kèm file
             trong email này.  </p>
+            
+            ${dataSend.followUpDate ? `<p><b>Lịch hẹn tái khám:</b> ${dataSend.followUpDate}. Vui lòng truy cập hệ thống để đặt lại lịch khám.</p>` : ''}
 
             <p>Nếu bạn có bất kỳ thắc mắc nào, vui lòng liên hệ lại với chúng tôi 
             để được hỗ trợ kịp thời.</p>
@@ -130,6 +132,9 @@ let getBodyHTMLEmailRemedy = (dataSend) => {
             Detailed information regarding your <b>prescription</b> and <b>invoice</b>
             has been attached to this email as files.
             </p>
+
+            ${dataSend.followUpDate ? `<p><b>Follow-up appointment:</b> ${dataSend.followUpDate}. Please visit our system to book your follow-up appointment.</p>` : ''}
+
             <p>
             If you have any questions or need further assistance, please feel free
             to contact us. We are always happy to help.

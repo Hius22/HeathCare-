@@ -1,13 +1,9 @@
 
-
 const Sequelize = require('sequelize');
+const config = require(__dirname + '/config.json')[process.env.NODE_ENV || 'development'];
 
-// Option 1: Passing parameters separately
-const sequelize = new Sequelize('duan-new', 'root', null, {
-    host: 'localhost',
-    dialect: 'mysql',
-    logging: false
-});
+// Use the same config as models/index.js
+const sequelize = new Sequelize(config.database, config.username, config.password, config);
 
 let connectDB = async () => {
     try {
