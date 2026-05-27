@@ -41,6 +41,8 @@ let initWebRoutes = (app) => {
     router.put('/api/update-booking-status', patientController.updateBookingStatus);
     router.get('/api/get-patient-history', patientController.getPatientHistory);
     router.post('/api/save-patient-history', patientController.savePatientHistory);
+    router.get('/api/get-notifications', patientController.getNotifications);
+    router.get('/api/get-notifications-doctor', patientController.getNotificationsDoctor);
 
     router.post('/api/create-new-specialty', specialtyController.createSpecialty);
     router.get('/api/get-specialty', specialtyController.getAllSpecialty);

@@ -106,7 +106,8 @@ let postBookAppointment = (data) => {
                     patientId: user.id,
                     date: data.date,
                     timeType: data.timeType,
-                    token: token
+                    token: token,
+                    reason: data.reason
                 }
             });
 
@@ -343,11 +344,241 @@ let savePatientHistory = (data) => {
     });
 };
 
+let getNotificationsAdmin = () => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            // Lấy 50 booking mới nhất để làm thông báo cho Admin
+            let bookings = await db.Booking.findAll({
+                include: [
+                    {
+                        model: db.User,
+                        as: 'patientData',
+                        attributes: ['id', 'firstName', 'lastName', 'email', 'phonenumber']
+                    },
+                    {
+                        model: db.User,
+                        as: 'doctorData',
+                        attributes: ['id', 'firstName', 'lastName']
+                    },
+                    {
+                        model: db.Allcode,
+                        as: 'timeTypeDataPatient',
+                        attributes: ['valueEn', 'valueVi']
+                    },
+                    {
+                        model: db.Allcode,
+                        as: 'statusData',
+                        attributes: ['valueEn', 'valueVi']
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: 50,
+                raw: false,
+                nest: true
+            });
+
+            let notifications = bookings.map(b => {
+                let patientName = b.patientData
+                    ? `${b.patientData.lastName || ''} ${b.patientData.firstName || ''}`.trim()
+                    : 'Bệnh nhân';
+                let doctorName = b.doctorData
+                    ? `BS. ${b.doctorData.lastName || ''} ${b.doctorData.firstName || ''}`.trim()
+                    : 'Bác sĩ';
+                let timeVi = b.timeTypeDataPatient ? b.timeTypeDataPatient.valueVi : '';
+                let timeEn = b.timeTypeDataPatient ? b.timeTypeDataPatient.valueEn : '';
+                let status = b.statusId;
+
+                let titleVi = '', titleEn = '', descVi = '', descEn = '', icon = '', type = '';
+
+                if (status === 'S1') {
+                    icon = 'fas fa-calendar-plus';
+                    type = 'new-booking';
+                    titleVi = 'Đặt lịch mới';
+                    titleEn = 'New Booking';
+                    descVi = `${patientName} vừa đặt lịch với ${doctorName} lúc ${timeVi}`;
+                    descEn = `${patientName} booked an appointment with ${doctorName} at ${timeEn}`;
+                } else if (status === 'S2') {
+                    icon = 'fas fa-check-circle';
+                    type = 'confirmed';
+                    titleVi = 'Lịch được xác nhận';
+                    titleEn = 'Appointment Confirmed';
+                    descVi = `${patientName} đã xác nhận lịch khám với ${doctorName} lúc ${timeVi}`;
+                    descEn = `${patientName} confirmed appointment with ${doctorName} at ${timeEn}`;
+                } else if (status === 'S3') {
+                    icon = 'fas fa-stethoscope';
+                    type = 'completed';
+                    titleVi = 'Khám hoàn thành';
+                    titleEn = 'Appointment Done';
+                    descVi = `${patientName} đã được khám bởi ${doctorName}`;
+                    descEn = `${patientName} was examined by ${doctorName}`;
+                } else if (status === 'S4') {
+                    icon = 'fas fa-times-circle';
+                    type = 'cancelled';
+                    titleVi = 'Lịch bị hủy';
+                    titleEn = 'Appointment Cancelled';
+                    descVi = `Lịch của ${patientName} với ${doctorName} đã bị hủy`;
+                    descEn = `Appointment of ${patientName} with ${doctorName} was cancelled`;
+                } else {
+                    icon = 'fas fa-bell';
+                    type = 'other';
+                    titleVi = 'Cập nhật lịch';
+                    titleEn = 'Booking Update';
+                    descVi = `Cập nhật lịch hẹn của ${patientName}`;
+                    descEn = `Booking update for ${patientName}`;
+                }
+
+                return {
+                    id: b.id,
+                    type,
+                    icon,
+                    titleVi,
+                    titleEn,
+                    descVi,
+                    descEn,
+                    status,
+                    date: b.date,
+                    createdAt: b.createdAt,
+                    patientName,
+                    doctorName
+                };
+            });
+
+            resolve({
+                errCode: 0,
+                errMessage: 'Get notifications successfully',
+                data: notifications
+            });
+        } catch (e) {
+            console.log('Error in getNotificationsAdmin:', e);
+            reject(e);
+        }
+    });
+};
+
+let getNotificationsDoctor = (doctorId) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            if (!doctorId) {
+                return resolve({ errCode: 1, errMessage: 'Missing doctorId', data: [] });
+            }
+
+            let bookings = await db.Booking.findAll({
+                where: { doctorId: doctorId },
+                include: [
+                    {
+                        model: db.User,
+                        as: 'patientData',
+                        attributes: ['id', 'firstName', 'lastName', 'email', 'phonenumber', 'gender']
+                    },
+                    {
+                        model: db.Allcode,
+                        as: 'timeTypeDataPatient',
+                        attributes: ['valueEn', 'valueVi']
+                    },
+                    {
+                        model: db.Allcode,
+                        as: 'statusData',
+                        attributes: ['valueEn', 'valueVi']
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: 50,
+                raw: false,
+                nest: true
+            });
+
+            // Lấy ngày hôm nay theo timestamp (ms)
+            let today = new Date();
+            let todayMs = today.getTime();
+            // Làm tròn về đầu ngày
+            let startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+            let endOfToday = startOfToday + 86400000;
+
+            let notifications = bookings.map(b => {
+                let patientName = b.patientData
+                    ? `${b.patientData.lastName || ''} ${b.patientData.firstName || ''}`.trim()
+                    : 'Bệnh nhân';
+                let timeVi = b.timeTypeDataPatient ? b.timeTypeDataPatient.valueVi : '';
+                let timeEn = b.timeTypeDataPatient ? b.timeTypeDataPatient.valueEn : '';
+                let status = b.statusId;
+                let bookingDate = parseInt(b.date);
+                let isToday = bookingDate >= startOfToday && bookingDate < endOfToday;
+
+                let titleVi = '', titleEn = '', descVi = '', descEn = '', icon = '', type = '';
+
+                if (status === 'S1') {
+                    icon = 'fas fa-user-plus';
+                    type = 'new-patient';
+                    titleVi = 'Bệnh nhân mới đặt lịch';
+                    titleEn = 'New Appointment Request';
+                    descVi = `${patientName} vừa đặt lịch khám${isToday ? ' HÔM NAY' : ''} lúc ${timeVi}`;
+                    descEn = `${patientName} requested an appointment${isToday ? ' TODAY' : ''} at ${timeEn}`;
+                } else if (status === 'S2') {
+                    icon = 'fas fa-clipboard-check';
+                    type = 'patient-confirmed';
+                    titleVi = 'Bệnh nhân đã xác nhận';
+                    titleEn = 'Patient Confirmed';
+                    descVi = `${patientName} đã xác nhận lịch khám${isToday ? ' HÔM NAY' : ''} lúc ${timeVi}`;
+                    descEn = `${patientName} confirmed appointment${isToday ? ' TODAY' : ''} at ${timeEn}`;
+                } else if (status === 'S3') {
+                    icon = 'fas fa-check-double';
+                    type = 'completed';
+                    titleVi = 'Đã hoàn thành khám';
+                    titleEn = 'Examination Completed';
+                    descVi = `Đã hoàn thành khám cho ${patientName} lúc ${timeVi}`;
+                    descEn = `Completed examination for ${patientName} at ${timeEn}`;
+                } else if (status === 'S4') {
+                    icon = 'fas fa-user-times';
+                    type = 'cancelled';
+                    titleVi = 'Lịch bị hủy';
+                    titleEn = 'Appointment Cancelled';
+                    descVi = `Lịch của ${patientName} lúc ${timeVi} đã bị hủy`;
+                    descEn = `Appointment of ${patientName} at ${timeEn} was cancelled`;
+                } else {
+                    icon = 'fas fa-bell';
+                    type = 'other';
+                    titleVi = 'Cập nhật lịch hẹn';
+                    titleEn = 'Appointment Update';
+                    descVi = `Cập nhật lịch của ${patientName}`;
+                    descEn = `Update for ${patientName}`;
+                }
+
+                return {
+                    id: b.id,
+                    type,
+                    icon,
+                    titleVi,
+                    titleEn,
+                    descVi,
+                    descEn,
+                    status,
+                    date: b.date,
+                    isToday,
+                    createdAt: b.createdAt,
+                    patientName,
+                    patientPhone: b.patientData ? b.patientData.phonenumber : ''
+                };
+            });
+
+            resolve({
+                errCode: 0,
+                errMessage: 'Get doctor notifications successfully',
+                data: notifications
+            });
+        } catch (e) {
+            console.log('Error in getNotificationsDoctor:', e);
+            reject(e);
+        }
+    });
+};
+
 module.exports = {
     postBookAppointment: postBookAppointment,
     postVerifyBookAppointment: postVerifyBookAppointment,
     getAllBookings: getAllBookings,
     updateBookingStatus: updateBookingStatus,
     getPatientHistory: getPatientHistory,
-    savePatientHistory: savePatientHistory
+    savePatientHistory: savePatientHistory,
+    getNotificationsAdmin: getNotificationsAdmin,
+    getNotificationsDoctor: getNotificationsDoctor
 };

@@ -78,11 +78,33 @@ let savePatientHistory = async (req, res) => {
     }
 }
 
+let getNotifications = async (req, res) => {
+    try {
+        let result = await patientService.getNotificationsAdmin();
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json({ errCode: -1, errMessage: 'Error from the server.' });
+    }
+}
+
+let getNotificationsDoctor = async (req, res) => {
+    try {
+        let result = await patientService.getNotificationsDoctor(req.query.doctorId);
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json({ errCode: -1, errMessage: 'Error from the server.' });
+    }
+}
+
 module.exports = {
     postBookAppointment: postBookAppointment,
     postVerifyBookAppointment: postVerifyBookAppointment,
     getAllBookings: getAllBookings,
     updateBookingStatus: updateBookingStatus,
     getPatientHistory: getPatientHistory,
-    savePatientHistory: savePatientHistory
+    savePatientHistory: savePatientHistory,
+    getNotifications: getNotifications,
+    getNotificationsDoctor: getNotificationsDoctor
 }
