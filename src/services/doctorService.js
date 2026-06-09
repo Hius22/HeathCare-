@@ -162,7 +162,7 @@ let saveDetailInforDoctor = (inputData) => {
 
             // Build required fields check (allow specialtyId OR specialtyIds)
             let arrFields = ['doctorId', 'contentHTML', 'contentMarkdown', 'action',
-                'selectedPrice', 'selectedProvince', 'nameClinic', 'addressClinic', 'note'];
+                'selectedPrice', 'selectedProvince', 'selectedPayment', 'nameClinic', 'addressClinic', 'note'];
             let isValid = true, element = '';
             for (let f of arrFields) {
                 if (!inputData[f]) { isValid = false; element = f; break; }
@@ -200,25 +200,37 @@ let saveDetailInforDoctor = (inputData) => {
             });
             let primarySpecialtyId = specialtyIds[0];
 
+            let clinicId = 1;
+            if (inputData.addressClinic) {
+                let clinic = await db.Clinic.findOne({
+                    where: { address: inputData.addressClinic }
+                });
+                if (clinic) {
+                    clinicId = clinic.id;
+                }
+            }
+
             if (doctorInfor) {
                 doctorInfor.priceId = inputData.selectedPrice;
                 doctorInfor.provinceId = inputData.selectedProvince;
+                doctorInfor.paymentId = inputData.selectedPayment;
                 doctorInfor.nameClinic = inputData.nameClinic;
                 doctorInfor.addressClinic = inputData.addressClinic;
                 doctorInfor.note = inputData.note;
                 doctorInfor.specialtyId = primarySpecialtyId;
-                doctorInfor.clinicId = inputData.clinicId || 1;
+                doctorInfor.clinicId = clinicId;
                 await doctorInfor.save();
             } else {
                 await db.Doctor_Infor.create({
                     doctorId: inputData.doctorId,
                     priceId: inputData.selectedPrice,
                     provinceId: inputData.selectedProvince,
+                    paymentId: inputData.selectedPayment,
                     nameClinic: inputData.nameClinic,
                     addressClinic: inputData.addressClinic,
                     note: inputData.note,
                     specialtyId: primarySpecialtyId,
-                    clinicId: inputData.clinicId || 1
+                    clinicId: clinicId
                 });
             }
 
@@ -230,7 +242,7 @@ let saveDetailInforDoctor = (inputData) => {
             // Insert new entries
             let newRows = specialtyIds.map(spId => ({
                 doctorId: inputData.doctorId,
-                clinicId: inputData.clinicId || 1,
+                clinicId: clinicId,
                 specialtyId: spId
             }));
             await db.Doctor_Clinic_Specialty.bulkCreate(newRows);
@@ -487,26 +499,31 @@ let getProfileDoctorById = (inputId) => {
 let getListPatientForDoctor = (doctorId, date) => {
     return new Promise(async (resolve, reject) => {
         try {
-            if (!doctorId || !date) {
+            if (!doctorId) {
                 return resolve({
                     errCode: 1,
                     errMessage: 'Missing required parameter'
                 });
             }
 
-            let data = await db.Booking.findAll({
-                where: {
-                    statusId: {
-                        [Op.in]: ['S1', 'S2', 'S3', 'S4']
-                    },
-                    doctorId: doctorId,
-                    date: date
+            let whereClause = {
+                statusId: {
+                    [Op.in]: ['S1', 'S2', 'S3', 'S4']
                 },
+                doctorId: doctorId
+            };
+
+            if (date && date !== 'all') {
+                whereClause.date = date;
+            }
+
+            let data = await db.Booking.findAll({
+                where: whereClause,
                 include: [
                     {
                         model: db.User,
                         as: 'patientData',
-                        attributes: ['email', 'firstName', 'lastName', 'address', 'gender', 'phonenumber'],
+                        attributes: ['email', 'firstName', 'lastName', 'address', 'gender', 'phonenumber', 'birthday'],
                         include: [
                             { model: db.Allcode, as: 'genderData', attributes: ['valueEn', 'valueVi'] }
                         ],
@@ -542,7 +559,7 @@ let getListPatientForDoctor = (doctorId, date) => {
 let sendRemedy = (data) => {
     return new Promise(async (resolve, reject) => {
         try {
-            if (!data.email || !data.doctorId || !data.patientId || !data.timeType) {
+            if (!data.email || !data.doctorId || !data.patientId || !data.timeType || !data.date) {
                 return resolve({
                     errCode: 1,
                     errMessage: 'Missing required parameter'
@@ -555,6 +572,7 @@ let sendRemedy = (data) => {
                         doctorId: data.doctorId,
                         patientId: data.patientId,
                         timeType: data.timeType,
+                        date: data.date,
                         statusId: 'S2'
                     },
                     raw: false
@@ -564,6 +582,24 @@ let sendRemedy = (data) => {
                     appointment.statusId = 'S3'
                     await appointment.save();
                 }
+
+                // Query doctor payment info automatically
+                let doctorInfor = await db.Doctor_Infor.findOne({
+                    where: { doctorId: data.doctorId },
+                    include: [
+                        { model: db.Allcode, as: 'paymentTypeData', attributes: ['valueVi', 'valueEn'] }
+                    ],
+                    raw: true,
+                    nest: true
+                });
+
+                let paymentMethod = data.language === 'vi' ? 'Tiền mặt' : 'Cash';
+                if (doctorInfor && doctorInfor.paymentTypeData) {
+                    paymentMethod = data.language === 'vi' 
+                        ? doctorInfor.paymentTypeData.valueVi 
+                        : doctorInfor.paymentTypeData.valueEn;
+                }
+                data.paymentMethod = paymentMethod;
 
                 //send email remedy
                 await emailService.sendAttachment(data)

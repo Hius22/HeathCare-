@@ -55,6 +55,7 @@ let initWebRoutes = (app) => {
     router.get('/api/get-clinic-info', clinicController.getClinicInfo);
     router.put('/api/update-clinic-info', clinicController.updateClinicInfo);
     router.post('/api/create-clinic-info', clinicController.createClinicInfo);
+    router.delete('/api/delete-clinic', clinicController.deleteClinic);
 
     return app.use("/", router);
 }

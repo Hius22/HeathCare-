@@ -72,8 +72,14 @@ let getDetailClinicById = (inputId) => {
                     where: {
                         id: inputId
                     },
-                    attributes: ['name', 'address', 'descriptionHTML', 'descriptionMarkdown'],
+                    attributes: ['name', 'address', 'image', 'descriptionHTML', 'descriptionMarkdown'],
                 })
+
+                if (data && data.image) {
+                    try {
+                        data.image = Buffer.from(data.image, 'base64').toString('binary');
+                    } catch (e) { }
+                }
 
                 if (data) {
                     let doctorClinic = [];
@@ -81,7 +87,12 @@ let getDetailClinicById = (inputId) => {
                         where: {
                             clinicId: inputId
                         },
-                        attributes: ['doctorId', 'provinceId'],
+                        attributes: ['doctorId', 'provinceId', 'specialtyId'],
+                        include: [
+                            { model: db.Specialty, as: 'specialtyData', attributes: ['id', 'name'] }
+                        ],
+                        raw: false,
+                        nest: true
                     })
 
                     data.doctorClinic = doctorClinic;
@@ -129,16 +140,23 @@ let getClinicInfo = () => {
 let updateClinicInfo = (data) => {
     return new Promise(async (resolve, reject) => {
         try {
-            // Find ANY clinic
+            if (!data.id) {
+                resolve({
+                    errCode: 1,
+                    errMessage: 'Missing clinic ID'
+                });
+                return;
+            }
+
             let clinic = await db.Clinic.findOne({
-                order: [['id', 'ASC']],
+                where: { id: data.id },
                 raw: false
             });
 
             if (!clinic) {
                 resolve({
-                    errCode: 1,
-                    errMessage: 'Không có phòng khám nào trong cơ sở dữ liệu.'
+                    errCode: 2,
+                    errMessage: 'Không tìm thấy phòng khám trong cơ sở dữ liệu.'
                 });
                 return;
             }
@@ -168,15 +186,10 @@ let updateClinicInfo = (data) => {
 let createClinicInfo = (data) => {
     return new Promise(async (resolve, reject) => {
         try {
-            // Check if clinic already exists
-            let existingClinic = await db.Clinic.findOne({
-                order: [['id', 'ASC']]
-            });
-
-            if (existingClinic) {
+            if (!data.name || !data.address) {
                 resolve({
                     errCode: 1,
-                    errMessage: 'Đã tồn tại phòng khám trong hệ thống!'
+                    errMessage: 'Missing parameter'
                 });
                 return;
             }
@@ -204,6 +217,41 @@ let createClinicInfo = (data) => {
     })
 }
 
+let deleteClinic = (inputId) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            if (!inputId) {
+                resolve({
+                    errCode: 1,
+                    errMessage: 'Missing parameter'
+                });
+                return;
+            }
+
+            let clinic = await db.Clinic.findOne({
+                where: { id: inputId }
+            });
+
+            if (!clinic) {
+                resolve({
+                    errCode: 2,
+                    errMessage: 'Phòng khám không tồn tại.'
+                });
+                return;
+            }
+
+            await clinic.destroy();
+
+            resolve({
+                errCode: 0,
+                errMessage: 'OK'
+            });
+        } catch (e) {
+            reject(e);
+        }
+    })
+}
+
 module.exports = {
     createClinic: createClinic,
     getAllClinic: getAllClinic,
@@ -211,4 +259,5 @@ module.exports = {
     getClinicInfo: getClinicInfo,
     updateClinicInfo: updateClinicInfo,
     createClinicInfo: createClinicInfo,
+    deleteClinic: deleteClinic,
 }

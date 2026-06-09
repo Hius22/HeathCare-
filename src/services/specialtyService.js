@@ -68,10 +68,16 @@ let getDetailSpecialtyById = (inputId, location) => {
             } else {
                 let data = await db.Specialty.findOne({
                     where: { id: inputId },
-                    attributes: ['descriptionHTML', 'descriptionMarkdown'],
+                    attributes: ['name', 'image', 'descriptionHTML', 'descriptionMarkdown'],
+                    raw: true
                 });
 
                 if (data) {
+                    if (data.image) {
+                        try {
+                            data.image = Buffer.from(data.image, 'base64').toString('binary');
+                        } catch (e) { }
+                    }
                     let doctorSpecialty = [];
 
                     // Query via junction table (many-to-many)

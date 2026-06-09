@@ -24,6 +24,50 @@ let postBookAppointment = (data) => {
                 });
             }
 
+            // Check if the booking date/time is in the past
+            let timeCode = await db.Allcode.findOne({
+                where: { keyMap: data.timeType, type: 'TIME' }
+            });
+            if (timeCode) {
+                let timeStr = timeCode.valueVi; // e.g. "8:00 - 9:00"
+                let selectedDate = new Date(Number(data.date));
+                selectedDate.setHours(0, 0, 0, 0);
+
+                let today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                let isPast = false;
+                if (selectedDate.getTime() < today.getTime()) {
+                    isPast = true;
+                } else if (selectedDate.getTime() === today.getTime()) {
+                    if (timeStr) {
+                        let parts = timeStr.split('-');
+                        if (parts.length > 0) {
+                            let startPart = parts[0].trim();
+                            let timeParts = startPart.split(':');
+                            if (timeParts.length === 2) {
+                                let hour = parseInt(timeParts[0], 10);
+                                let minute = parseInt(timeParts[1], 10);
+
+                                let slotTime = new Date();
+                                slotTime.setHours(hour, minute, 0, 0);
+
+                                if (new Date().getTime() > slotTime.getTime()) {
+                                    isPast = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (isPast) {
+                    return resolve({
+                        errCode: 4,
+                        errMessage: 'Không thể đặt lịch khám cho khung giờ đã qua!'
+                    });
+                }
+            }
+
             // Check maximum booking limit (5 per time slot)
             let countBooking = await db.Booking.count({
                 where: {
@@ -55,7 +99,8 @@ let postBookAppointment = (data) => {
                     address: data.address,
                     gender: data.selectedGender,
                     phonenumber: data.phoneNumber,
-                    firstName: data.fullName
+                    firstName: data.fullName,
+                    birthday: data.birthday
                 }
             });
             let user = userData[0];
@@ -67,6 +112,7 @@ let postBookAppointment = (data) => {
                 if (!user.gender && data.selectedGender) { user.gender = data.selectedGender; needsUpdate = true; }
                 if (!user.address && data.address) { user.address = data.address; needsUpdate = true; }
                 if (!user.firstName && data.fullName) { user.firstName = data.fullName; needsUpdate = true; }
+                if (!user.birthday && data.birthday) { user.birthday = data.birthday; needsUpdate = true; }
                 
                 if (needsUpdate) {
                     await user.save();
@@ -223,7 +269,17 @@ let getAllBookings = (data) => {
                     {
                         model: db.User,
                         as: 'doctorData',
-                        attributes: ['id', 'firstName', 'lastName', 'email']
+                        attributes: ['id', 'firstName', 'lastName', 'email'],
+                        include: [
+                            {
+                                model: db.Doctor_Infor,
+                                attributes: ['priceId', 'paymentId'],
+                                include: [
+                                    { model: db.Allcode, as: 'priceTypeData', attributes: ['valueVi', 'valueEn'] },
+                                    { model: db.Allcode, as: 'paymentTypeData', attributes: ['valueVi', 'valueEn'] }
+                                ]
+                            }
+                        ]
                     },
                     {
                         model: db.Allcode,
@@ -276,7 +332,78 @@ let updateBookingStatus = (data) => {
 
             if (booking) {
                 booking.statusId = data.statusId;
+                if (data.price && data.paymentMethod) {
+                    booking.isPaid = 1;
+                }
                 await booking.save();
+
+                // If completing booking, check if we need to update/create History
+                if (data.statusId === 'S3') {
+                    // Try to find if there is an existing history record for this doctor and patient created recently
+                    let history = await db.History.findOne({
+                        where: {
+                            patientId: booking.patientId,
+                            doctorId: booking.doctorId,
+                            createdAt: {
+                                [Op.gt]: new Date(new Date() - 24 * 60 * 60 * 1000) // created in last 24 hours
+                            }
+                        },
+                        order: [['createdAt', 'DESC']],
+                        raw: false
+                    });
+
+                    let priceVal = data.price;
+                    let paymentVal = data.paymentMethod;
+
+                    if (!priceVal || !paymentVal) {
+                        // Load defaults from Doctor_Infor
+                        let doctorInfor = await db.Doctor_Infor.findOne({
+                            where: { doctorId: booking.doctorId },
+                            include: [
+                                { model: db.Allcode, as: 'paymentTypeData', attributes: ['valueVi', 'valueEn'] },
+                                { model: db.Allcode, as: 'priceTypeData', attributes: ['valueVi', 'valueEn'] }
+                            ],
+                            raw: true,
+                            nest: true
+                        });
+                        if (doctorInfor) {
+                            if (!paymentVal && doctorInfor.paymentTypeData) {
+                                paymentVal = `${doctorInfor.paymentTypeData.valueVi} / ${doctorInfor.paymentTypeData.valueEn}`;
+                            }
+                            if (!priceVal && doctorInfor.priceTypeData) {
+                                priceVal = `${doctorInfor.priceTypeData.valueVi} / ${doctorInfor.priceTypeData.valueEn}`;
+                            }
+                        }
+                    }
+
+                    if (history) {
+                        // Update existing history
+                        try {
+                            let descObj = JSON.parse(history.description);
+                            descObj.price = priceVal;
+                            descObj.paymentMethod = paymentVal;
+                            history.description = JSON.stringify(descObj);
+                            await history.save();
+                        } catch (err) {
+                            console.error("Error updating history description:", err);
+                        }
+                    } else {
+                        // Create a history record if the doctor hasn't created one
+                        let descriptionObj = {
+                            diagnosis: 'Khám lâm sàng / General checkup',
+                            services: 'Không có / None',
+                            prescription: 'Đã hoàn tất thanh toán tại quầy',
+                            price: priceVal,
+                            paymentMethod: paymentVal
+                        };
+                        await db.History.create({
+                            patientId: booking.patientId,
+                            doctorId: booking.doctorId,
+                            description: JSON.stringify(descriptionObj),
+                            files: ''
+                        });
+                    }
+                }
 
                 resolve({
                     errCode: 0,
@@ -305,7 +432,26 @@ let getPatientHistory = (patientId) => {
             }
             let data = await db.History.findAll({
                 where: { patientId: patientId },
-                order: [['createdAt', 'DESC']]
+                include: [
+                    {
+                        model: db.User,
+                        as: 'doctorData',
+                        attributes: ['id', 'firstName', 'lastName', 'email'],
+                        include: [
+                            {
+                                model: db.Doctor_Infor,
+                                attributes: ['priceId', 'paymentId'],
+                                include: [
+                                    { model: db.Allcode, as: 'priceTypeData', attributes: ['valueVi', 'valueEn'] },
+                                    { model: db.Allcode, as: 'paymentTypeData', attributes: ['valueVi', 'valueEn'] }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+                raw: false,
+                nest: true
             });
             resolve({
                 errCode: 0,
@@ -327,10 +473,40 @@ let savePatientHistory = (data) => {
                     errMessage: 'Missing parameter'
                 });
             }
+
+            let finalDescription = data.description;
+            try {
+                let descObj = JSON.parse(data.description);
+                
+                // Get doctor payment and price info
+                let doctorInfor = await db.Doctor_Infor.findOne({
+                    where: { doctorId: data.doctorId },
+                    include: [
+                        { model: db.Allcode, as: 'paymentTypeData', attributes: ['valueVi', 'valueEn'] },
+                        { model: db.Allcode, as: 'priceTypeData', attributes: ['valueVi', 'valueEn'] }
+                    ],
+                    raw: true,
+                    nest: true
+                });
+
+                if (doctorInfor) {
+                    if (doctorInfor.paymentTypeData) {
+                        descObj.paymentMethod = `${doctorInfor.paymentTypeData.valueVi} / ${doctorInfor.paymentTypeData.valueEn}`;
+                    }
+                    if (doctorInfor.priceTypeData) {
+                        descObj.price = `${doctorInfor.priceTypeData.valueVi} / ${doctorInfor.priceTypeData.valueEn}`;
+                    }
+                }
+                
+                finalDescription = JSON.stringify(descObj);
+            } catch (jsonErr) {
+                console.error("Error parsing description JSON in savePatientHistory", jsonErr);
+            }
+
             await db.History.create({
                 patientId: data.patientId,
                 doctorId: data.doctorId,
-                description: data.description,
+                description: finalDescription,
                 files: data.files || ''
             });
 
