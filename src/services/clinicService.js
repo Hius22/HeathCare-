@@ -229,7 +229,8 @@ let deleteClinic = (inputId) => {
             }
 
             let clinic = await db.Clinic.findOne({
-                where: { id: inputId }
+                where: { id: inputId },
+                raw: false
             });
 
             if (!clinic) {

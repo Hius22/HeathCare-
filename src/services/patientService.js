@@ -11,9 +11,27 @@ let buildUrlEmail = (doctorId, token) => {
     return result;
 }
 
+let autoCancelExpiredBookings = async () => {
+    try {
+        let fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        await db.Booking.update({
+            statusId: 'S4' // Cancelled
+        }, {
+            where: {
+                statusId: 'S1',
+                createdAt: { [Op.lt]: fiveMinutesAgo }
+            }
+        });
+    } catch (e) {
+        console.error('Error in autoCancelExpiredBookings:', e);
+    }
+};
+
 let postBookAppointment = (data) => {
     return new Promise(async (resolve, reject) => {
         try {
+            await autoCancelExpiredBookings();
+
             // Validate input
             if (!data.email || !data.doctorId || !data.timeType
                 || !data.date || !data.fullName || !data.selectedGender
@@ -68,31 +86,17 @@ let postBookAppointment = (data) => {
                 }
             }
 
-            // Check maximum booking limit (5 per time slot)
-            let countBooking = await db.Booking.count({
-                where: {
-                    doctorId: data.doctorId,
-                    date: data.date,
-                    timeType: data.timeType,
-                    statusId: {
-                        [Op.ne]: 'S4'
-                    }
-                }
-            });
 
-            if (countBooking >= 5) {
-                return resolve({
-                    errCode: 3,
-                    errMessage: 'Khung giờ này đã nhận đủ tối đa 5 bệnh nhân. Vui lòng chọn thời gian khác!'
-                });
-            }
 
             // Generate token BEFORE saving to DB
             let token = uuidv4();
 
             // upsert patient
             let userData = await db.User.findOrCreate({
-                where: { email: data.email },
+                where: { 
+                    email: data.email,
+                    firstName: data.fullName
+                },
                 defaults: {
                     email: data.email,
                     roleId: 'R3',
@@ -105,36 +109,95 @@ let postBookAppointment = (data) => {
             });
             let user = userData[0];
 
-            // Update user info if they already exist but have missing fields
+            // Update user info if they already exist but have different/new fields
             if (!userData[1]) {
-                let needsUpdate = false;
-                if (!user.phonenumber && data.phoneNumber) { user.phonenumber = data.phoneNumber; needsUpdate = true; }
-                if (!user.gender && data.selectedGender) { user.gender = data.selectedGender; needsUpdate = true; }
-                if (!user.address && data.address) { user.address = data.address; needsUpdate = true; }
-                if (!user.firstName && data.fullName) { user.firstName = data.fullName; needsUpdate = true; }
-                if (!user.birthday && data.birthday) { user.birthday = data.birthday; needsUpdate = true; }
+                let updateData = {};
+                if (data.phoneNumber && String(user.phonenumber) !== String(data.phoneNumber)) {
+                    updateData.phonenumber = data.phoneNumber;
+                }
+                if (data.selectedGender && String(user.gender) !== String(data.selectedGender)) {
+                    updateData.gender = data.selectedGender;
+                }
+                if (data.address && String(user.address) !== String(data.address)) {
+                    updateData.address = data.address;
+                }
+                if (data.birthday && String(user.birthday) !== String(data.birthday)) {
+                    updateData.birthday = data.birthday;
+                }
                 
-                if (needsUpdate) {
-                    await user.save();
+                if (Object.keys(updateData).length > 0) {
+                    await db.User.update(updateData, {
+                        where: { id: user.id }
+                    });
+                    Object.assign(user, updateData);
                 }
             }
 
-            // Prevent multiple bookings on the same day with the same doctor
-            let existingDayBooking = await db.Booking.findOne({
+            let fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+            // Prevent booking conflicting/overlapping appointments for the same patient at the same date and time slot
+            let conflictingBooking = await db.Booking.findOne({
                 where: {
                     patientId: user.id,
-                    doctorId: data.doctorId,
                     date: data.date,
-                    statusId: {
-                        [Op.in]: ['S1', 'S2', 'S3']
-                    }
+                    timeType: data.timeType,
+                    [Op.or]: [
+                        { statusId: { [Op.in]: ['S2', 'S3'] } },
+                        {
+                            statusId: 'S1',
+                            createdAt: { [Op.gte]: fiveMinutesAgo }
+                        }
+                    ]
                 }
             });
 
-            if (existingDayBooking) {
+            if (conflictingBooking) {
+                if (Number(conflictingBooking.doctorId) === Number(data.doctorId)) {
+                    return resolve({
+                        errCode: 4,
+                        errMessage: 'Bạn đã có lịch hẹn vào khung giờ này với bác sĩ này!'
+                    });
+                } else {
+                    return resolve({
+                        errCode: 4,
+                        errMessage: 'Bạn đã có một lịch hẹn khác vào cùng khung giờ này trong ngày hôm nay. Vui lòng chọn khung giờ khác!'
+                    });
+                }
+            }
+
+            // Check if doctor's schedule has reached its maximum patient capacity
+            let schedule = await db.Schedule.findOne({
+                where: {
+                    doctorId: data.doctorId,
+                    date: data.date,
+                    timeType: data.timeType
+                },
+                raw: true
+            });
+
+            // Enforce exactly 5 patients capacity per time slot
+            let maxCapacity = 5;
+
+            // Count existing bookings for this doctor, date, and time slot
+            let bookingCount = await db.Booking.count({
+                where: {
+                    doctorId: data.doctorId,
+                    date: data.date,
+                    timeType: data.timeType,
+                    [Op.or]: [
+                        { statusId: { [Op.in]: ['S2', 'S3'] } },
+                        {
+                            statusId: 'S1',
+                            createdAt: { [Op.gte]: fiveMinutesAgo }
+                        }
+                    ]
+                }
+            });
+
+            if (bookingCount >= maxCapacity) {
                 return resolve({
-                    errCode: 4,
-                    errMessage: 'Bạn đã có lịch hẹn với bác sĩ này trong ngày hôm nay. Vui lòng không đặt trùng!'
+                    errCode: 3,
+                    errMessage: `Khung giờ này đã nhận đủ tối đa ${maxCapacity} bệnh nhân. Vui lòng chọn thời gian khác!`
                 });
             }
 
@@ -147,7 +210,7 @@ let postBookAppointment = (data) => {
                     timeType: data.timeType
                 },
                 defaults: {
-                    statusId: 'S1',
+                    statusId: data.statusId || 'S1',
                     doctorId: data.doctorId,
                     patientId: user.id,
                     date: data.date,
@@ -162,20 +225,35 @@ let postBookAppointment = (data) => {
             if (!created) {
                 return resolve({
                     errCode: 2,
-                    errMessage: 'You have already booked this appointment!'
+                    errMessage: 'Bạn đã có lịch hẹn vào khung giờ này với bác sĩ này!'
                 });
             }
 
+            // Update currentNumber in Schedule if it exists
+            if (schedule) {
+                await db.Schedule.update(
+                    { currentNumber: (schedule.currentNumber || 0) + 1 },
+                    {
+                        where: {
+                            doctorId: data.doctorId,
+                            date: data.date,
+                            timeType: data.timeType
+                        }
+                    }
+                );
+            }
 
             // Send email
-            await emailService.sendSimpleEmail({
-                receiverEmail: data.email,
-                patientName: data.fullName,
-                time: data.timeString,
-                doctorName: data.doctorName,
-                language: data.language,
-                redirectLink: buildUrlEmail(data.doctorId, token)
-            });
+            if (!data.skipEmail) {
+                await emailService.sendSimpleEmail({
+                    receiverEmail: data.email,
+                    patientName: data.fullName,
+                    time: data.timeString,
+                    doctorName: data.doctorName,
+                    language: data.language,
+                    redirectLink: buildUrlEmail(data.doctorId, token)
+                });
+            }
 
             return resolve({
                 errCode: 0,
@@ -213,6 +291,16 @@ let postVerifyBookAppointment = (data) => {
                 })
 
                 if (appointment) {
+                    let fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+                    if (new Date(appointment.createdAt) < fiveMinutesAgo) {
+                        appointment.statusId = 'S4'; // Cancel the booking
+                        await appointment.save();
+                        return resolve({
+                            errCode: 3,
+                            errMessage: "Liên kết xác nhận đã hết hạn (quá 5 phút). Vui lòng đặt lại lịch hẹn mới!"
+                        });
+                    }
+
                     appointment.statusId = 'S2'
                     await appointment.save();
 
@@ -237,16 +325,28 @@ let postVerifyBookAppointment = (data) => {
 let getAllBookings = (data) => {
     return new Promise(async (resolve, reject) => {
         try {
+            await autoCancelExpiredBookings();
+
             let whereClause = {};
             if (data.date) whereClause.date = data.date;
             if (data.patientId) whereClause.patientId = data.patientId;
 
+            let fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+            whereClause[Op.or] = [
+                { statusId: { [Op.in]: ['S2', 'S3', 'S4'] } },
+                {
+                    statusId: 'S1',
+                    createdAt: { [Op.gte]: fiveMinutesAgo }
+                }
+            ];
+
             if (data.patientEmail) {
-                let patient = await db.User.findOne({
+                let patients = await db.User.findAll({
                     where: { email: data.patientEmail }
                 });
-                if (patient) {
-                    whereClause.patientId = patient.id;
+                if (patients && patients.length > 0) {
+                    let patientIds = patients.map(p => p.id);
+                    whereClause.patientId = { [Op.in]: patientIds };
                 } else {
                     return resolve({
                         errCode: 0,
@@ -264,19 +364,31 @@ let getAllBookings = (data) => {
                         as: 'patientData',
                         attributes: {
                             exclude: ['password']
-                        }
+                        },
+                        include: [
+                            { model: db.Allcode, as: 'genderData', attributes: ['valueEn', 'valueVi'] }
+                        ]
                     },
                     {
                         model: db.User,
                         as: 'doctorData',
-                        attributes: ['id', 'firstName', 'lastName', 'email'],
+                        attributes: ['id', 'firstName', 'lastName', 'email', 'image'],
                         include: [
                             {
                                 model: db.Doctor_Infor,
-                                attributes: ['priceId', 'paymentId'],
+                                attributes: ['priceId', 'paymentId', 'specialtyId'],
                                 include: [
                                     { model: db.Allcode, as: 'priceTypeData', attributes: ['valueVi', 'valueEn'] },
-                                    { model: db.Allcode, as: 'paymentTypeData', attributes: ['valueVi', 'valueEn'] }
+                                    { model: db.Allcode, as: 'paymentTypeData', attributes: ['valueVi', 'valueEn'] },
+                                    { model: db.Specialty, as: 'specialtyData', attributes: ['id', 'name'] }
+                                ]
+                            },
+                            {
+                                model: db.Doctor_Clinic_Specialty,
+                                as: 'doctorSpecialties',
+                                attributes: ['specialtyId'],
+                                include: [
+                                    { model: db.Specialty, as: 'specialtyData', attributes: ['id', 'name'] }
                                 ]
                             }
                         ]
@@ -297,12 +409,68 @@ let getAllBookings = (data) => {
                 nest: true
             });
 
+            // Group bookings by doctorId to compute queueNumber per doctor
+            let doctorGroups = {};
+            bookings.forEach(b => {
+                if (!doctorGroups[b.doctorId]) {
+                    doctorGroups[b.doctorId] = [];
+                }
+                doctorGroups[b.doctorId].push(b);
+            });
+
+            // Sort and assign queueNumber for each group
+            for (let docId in doctorGroups) {
+                let group = doctorGroups[docId];
+                group.sort((x, y) => {
+                    if (x.timeType !== y.timeType) {
+                        return x.timeType.localeCompare(y.timeType);
+                    }
+                    return new Date(x.createdAt) - new Date(y.createdAt);
+                });
+                group.forEach((b, index) => {
+                    b.setDataValue('queueNumber', index + 1);
+                });
+            }
+
             // Add doctor name from Doctor_Infor if needed
             for (let booking of bookings) {
                 if (booking.doctorData) {
                     booking.doctorName = `${booking.doctorData.lastName} ${booking.doctorData.firstName}`;
+                    if (booking.doctorData.image) {
+                        try {
+                            booking.doctorData.image = Buffer.from(booking.doctorData.image, 'base64').toString('binary');
+                        } catch (e) {
+                            console.error('Error decoding doctor image:', e);
+                        }
+                    }
+                }
+                if (booking.isPaid === 1) {
+                    let history = await db.History.findOne({
+                        where: {
+                            patientId: booking.patientId,
+                            doctorId: booking.doctorId
+                        },
+                        order: [['createdAt', 'DESC']],
+                        raw: true
+                    });
+                    if (history) {
+                        try {
+                            let descObj = JSON.parse(history.description);
+                            booking.setDataValue('price', descObj.price || '');
+                            booking.setDataValue('paymentMethod', descObj.paymentMethod || '');
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    }
                 }
             }
+
+            bookings.sort((x, y) => {
+                if (x.timeType !== y.timeType) {
+                    return x.timeType.localeCompare(y.timeType);
+                }
+                return new Date(x.createdAt) - new Date(y.createdAt);
+            });
 
             resolve({
                 errCode: 0,
@@ -335,6 +503,11 @@ let updateBookingStatus = (data) => {
                 if (data.price && data.paymentMethod) {
                     booking.isPaid = 1;
                 }
+                if (data.weight !== undefined) booking.weight = data.weight;
+                if (data.height !== undefined) booking.height = data.height;
+                if (data.bloodPressure !== undefined) booking.bloodPressure = data.bloodPressure;
+                if (data.temperature !== undefined) booking.temperature = data.temperature;
+                if (data.symptoms !== undefined) booking.symptoms = data.symptoms;
                 await booking.save();
 
                 // If completing booking, check if we need to update/create History
@@ -382,6 +555,12 @@ let updateBookingStatus = (data) => {
                             let descObj = JSON.parse(history.description);
                             descObj.price = priceVal;
                             descObj.paymentMethod = paymentVal;
+                            if (data.servicePrices) {
+                                descObj.servicePrices = data.servicePrices;
+                            }
+                            if (data.medicinePrices) {
+                                descObj.medicinePrices = data.medicinePrices;
+                            }
                             history.description = JSON.stringify(descObj);
                             await history.save();
                         } catch (err) {
@@ -394,7 +573,9 @@ let updateBookingStatus = (data) => {
                             services: 'Không có / None',
                             prescription: 'Đã hoàn tất thanh toán tại quầy',
                             price: priceVal,
-                            paymentMethod: paymentVal
+                            paymentMethod: paymentVal,
+                            servicePrices: data.servicePrices || {},
+                            medicinePrices: data.medicinePrices || {}
                         };
                         await db.History.create({
                             patientId: booking.patientId,
@@ -748,6 +929,238 @@ let getNotificationsDoctor = (doctorId) => {
     });
 };
 
+let updatePatientInfo = (data) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            // Validate required fields
+            if (!data.id || !data.email || !data.firstName || !data.phonenumber || !data.address || !data.gender) {
+                return resolve({
+                    errCode: 1,
+                    errMessage: 'Missing required parameters'
+                });
+            }
+
+            // Find user
+            let user = await db.User.findOne({
+                where: { id: data.id },
+                raw: false
+            });
+
+            if (!user) {
+                return resolve({
+                    errCode: 2,
+                    errMessage: 'Patient not found'
+                });
+            }
+
+            // Update user fields
+            user.firstName = data.firstName;
+            user.lastName = data.lastName || user.lastName || '';
+            user.phonenumber = data.phonenumber;
+            user.address = data.address;
+            user.gender = data.gender;
+            await user.save();
+
+            // Translate gender for email
+            let genderLabel = data.gender;
+            try {
+                let genderCode = await db.Allcode.findOne({ where: { keyMap: data.gender, type: 'GENDER' } });
+                if (genderCode) {
+                    genderLabel = data.language === 'vi' ? genderCode.valueVi : genderCode.valueEn;
+                }
+            } catch (e) { /* ignore - use raw key if lookup fails */ }
+
+            // Send confirmation email (non-blocking)
+            emailService.sendUpdateInfoEmail({
+                receiverEmail: data.email,
+                patientName: data.firstName,
+                fullName: data.firstName,
+                phoneNumber: data.phonenumber,
+                address: data.address,
+                gender: genderLabel,
+                language: data.language || 'vi'
+            }).catch(err => console.error('Error sending update info email:', err));
+
+            return resolve({
+                errCode: 0,
+                errMessage: 'Update patient info successfully'
+            });
+
+        } catch (e) {
+            console.log('Error in updatePatientInfo:', e);
+            reject(e);
+        }
+    });
+};
+
+let getPatientByEmail = (email) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            if (!email) {
+                return resolve({
+                    errCode: 1,
+                    errMessage: 'Missing required parameters'
+                });
+            }
+            let patients = await db.User.findAll({
+                where: { email: email, roleId: 'R3' },
+                attributes: ['email', 'firstName', 'phonenumber', 'gender', 'address', 'birthday'],
+                raw: true
+            });
+            return resolve({
+                errCode: 0,
+                errMessage: 'Get patient info by email successfully',
+                data: patients.map(p => ({
+                    email: p.email,
+                    fullName: p.firstName,
+                    phoneNumber: p.phonenumber,
+                    selectedGender: p.gender,
+                    address: p.address,
+                    birthday: p.birthday
+                }))
+            });
+        } catch (e) {
+            reject(e);
+        }
+    });
+};
+
+let rescheduleBooking = (data) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            if (!data.bookingId || !data.date || !data.timeType) {
+                return resolve({
+                    errCode: 1,
+                    errMessage: 'Missing required parameters'
+                });
+            }
+
+            // Find booking
+            let booking = await db.Booking.findOne({
+                where: { id: data.bookingId },
+                raw: false
+            });
+
+            if (!booking) {
+                return resolve({
+                    errCode: 2,
+                    errMessage: 'Booking appointment not found'
+                });
+            }
+
+            // Can only reschedule bookings in status S1 (Chờ xác nhận) or S2 (Đã xác nhận)
+            if (booking.statusId !== 'S1' && booking.statusId !== 'S2') {
+                return resolve({
+                    errCode: 3,
+                    errMessage: 'Lịch hẹn đã khám hoặc đã hủy, không thể đổi lịch!'
+                });
+            }
+
+            // Check capacity limit of the new slot (e.g. check Doctor Schedule)
+            let schedule = await db.Schedule.findOne({
+                where: {
+                    doctorId: booking.doctorId,
+                    date: data.date,
+                    timeType: data.timeType
+                }
+            });
+
+            if (schedule) {
+                let maxCapacity = schedule.maxNumber ? Number(schedule.maxNumber) : 5;
+                let activeBookingCount = await db.Booking.count({
+                    where: {
+                        doctorId: booking.doctorId,
+                        date: data.date,
+                        timeType: data.timeType,
+                        statusId: { [Op.in]: ['S1', 'S2', 'S3'] }
+                    }
+                });
+
+                if (activeBookingCount >= maxCapacity) {
+                    return resolve({
+                        errCode: 4,
+                        errMessage: 'Khung giờ này đã đạt tối đa số lượng lịch hẹn cho phép. Vui lòng chọn khung giờ khác.'
+                    });
+                }
+            }
+
+            // Check if patient already has another booking at this exact timeType and date
+            let patientConflict = await db.Booking.findOne({
+                where: {
+                    patientId: booking.patientId,
+                    date: data.date,
+                    timeType: data.timeType,
+                    id: { [Op.ne]: data.bookingId },
+                    statusId: { [Op.in]: ['S1', 'S2', 'S3'] }
+                }
+            });
+
+            if (patientConflict) {
+                return resolve({
+                    errCode: 5,
+                    errMessage: 'Bạn đã có một lịch khám khác tại cùng khung giờ và ngày này!'
+                });
+            }
+
+            // Check if schedule date is in the past
+            let todayStart = new Date();
+            todayStart.setHours(0,0,0,0);
+            if (new Date(Number(data.date)) < todayStart) {
+                return resolve({
+                    errCode: 6,
+                    errMessage: 'Không thể đổi lịch hẹn sang một ngày trong quá khứ!'
+                });
+            }
+
+            // Update booking details
+            booking.date = data.date;
+            booking.timeType = data.timeType;
+            await booking.save();
+
+            // Send reschedule confirmation email
+            try {
+                let patient = await db.User.findOne({
+                    where: { id: booking.patientId },
+                    attributes: ['email', 'firstName']
+                });
+                let doctor = await db.User.findOne({
+                    where: { id: booking.doctorId },
+                    attributes: ['firstName', 'lastName']
+                });
+                let timeTypeVal = await db.Allcode.findOne({
+                    where: { keyMap: data.timeType, type: 'TIME' }
+                });
+
+                if (patient && doctor && timeTypeVal) {
+                    let formattedDate = data.language === 'vi' 
+                        ? new Date(Number(data.date)).toLocaleDateString('vi-VN')
+                        : new Date(Number(data.date)).toLocaleDateString('en-US');
+                    let timeLabel = data.language === 'vi' ? timeTypeVal.valueVi : timeTypeVal.valueEn;
+                    let doctorName = `${doctor.lastName} ${doctor.firstName}`;
+                    
+                    emailService.sendRescheduleEmail({
+                        email: patient.email,
+                        patientName: patient.firstName,
+                        doctorName: doctorName,
+                        time: `${timeLabel} - ${formattedDate}`,
+                        language: data.language || 'vi'
+                    }).catch(e => console.error('Send reschedule email error:', e));
+                }
+            } catch (emailErr) {
+                console.error('Failed to prepare reschedule email:', emailErr);
+            }
+
+            return resolve({
+                errCode: 0,
+                errMessage: 'Đổi lịch hẹn thành công'
+            });
+
+        } catch (e) {
+            reject(e);
+        }
+    });
+};
+
 module.exports = {
     postBookAppointment: postBookAppointment,
     postVerifyBookAppointment: postVerifyBookAppointment,
@@ -756,5 +1169,8 @@ module.exports = {
     getPatientHistory: getPatientHistory,
     savePatientHistory: savePatientHistory,
     getNotificationsAdmin: getNotificationsAdmin,
-    getNotificationsDoctor: getNotificationsDoctor
+    getNotificationsDoctor: getNotificationsDoctor,
+    updatePatientInfo: updatePatientInfo,
+    getPatientByEmail: getPatientByEmail,
+    rescheduleBooking: rescheduleBooking
 };
