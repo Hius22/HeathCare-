@@ -54,6 +54,7 @@ erDiagram
         string roleId
         string positionId FK
         string image
+        string birthday
     }
     
     allcodes {
@@ -72,6 +73,7 @@ erDiagram
         string timeType FK
         string token
         text reason
+        int isPaid
     }
 
     schedules {
@@ -162,6 +164,39 @@ erDiagram
 
     histories }|--|| users : "patient / doctor reference"
 ```
+
+**Mô tả chi tiết sơ đồ thực thể (ERD):**
+
+1. **Thực thể người dùng (`users`):** 
+   * Là thực thể trung tâm quản lý tất cả các tài khoản truy cập hệ thống. Phân loại đối tượng bằng trường `roleId` (`ADMIN` - Quản trị viên, `DOCTOR` - Bác sĩ, `PATIENT` - Bệnh nhân).
+   * Khóa ngoại `gender` và `positionId` kết nối tới bảng `allcodes` nhằm lấy chuỗi hiển thị đa ngôn ngữ tương ứng (Giới tính, học hàm như Thạc sĩ, Tiến sĩ, Bác sĩ chuyên khoa...).
+
+2. **Thực thể danh mục dùng chung (`allcodes`):**
+   * Đóng vai trò là bảng tra cứu (Look-up Table) tập trung. Tránh việc hardcode các giá trị tĩnh trong mã nguồn bằng cách định nghĩa các loại danh mục (`type` như `GENDER`, `ROLE`, `POSITION`, `STATUS`, `TIME`, `PRICE`, `PROVINCE`, `PAYMENT`).
+   * Các thực thể khác trong hệ thống như `users`, `bookings`, `schedules`, `doctor_infor` đều thiết lập quan hệ `belongsTo` với bảng này thông qua khóa ngoại liên kết với trường khóa chính `keyMap`.
+
+3. **Thực thể cuộc hẹn/lịch đặt (`bookings`):**
+   * Lưu trữ các giao dịch đặt lịch của Bệnh nhân với Bác sĩ.
+   * Chứa các khóa ngoại: `patientId` (ID bệnh nhân từ bảng `users`), `doctorId` (ID bác sĩ từ bảng `users`), `timeType` (khung giờ khám từ bảng `allcodes`), và `statusId` (trạng thái lịch đặt từ bảng `allcodes` gồm các mã `S1` - Lịch mới, `S2` - Đã xác nhận, `S3` - Đã khám, `S4` - Đã hủy).
+   * Trường `isPaid` (0 - Chưa thanh toán, 1 - Đã thanh toán) để theo dõi luồng checkout dịch vụ lâm sàng.
+
+4. **Thực thể lịch ca khám của bác sĩ (`schedules`):**
+   * Quản lý khung thời gian làm việc được đăng ký trước của bác sĩ theo từng ngày (`date`).
+   * Khóa ngoại `doctorId` liên kết với bảng `users`, và `timeType` xác định ca khám chi tiết liên kết với bảng `allcodes`.
+
+5. **Thực thể cấu hình nghiệp vụ bác sĩ (`doctor_infor`):**
+   * Mở rộng thông tin chuyên môn cho bác sĩ (chỉ áp dụng cho các dòng dữ liệu trong bảng `users` có `roleId` là `DOCTOR`).
+   * Quản lý giá khám (`priceId`), phương thức thanh toán (`paymentId`), và khu vực phòng khám (`provinceId`) thông qua liên kết khóa ngoại với bảng `allcodes`.
+   * Liên kết trực tiếp với Chuyên khoa y tế (`specialtyId`) trong bảng `specialties`.
+
+6. **Thực thể trung gian (`doctor_clinic_specialty`):**
+   * Giải quyết mối quan hệ Nhiều-Nhiều (Many-to-Many) giữa Bác sĩ, Phòng khám và Chuyên khoa trong trường hợp hệ thống mở rộng quy mô phòng khám, cho phép lập bản đồ định tuyến linh hoạt.
+
+7. **Thực thể bài viết giới thiệu (`markdowns`):**
+   * Lưu trữ nội dung văn bản giới thiệu chi tiết định dạng Markdown/HTML cho Bác sĩ (`doctorId`), Chuyên khoa (`specialtyId`), hoặc Phòng khám (`clinicId`). Giúp tách biệt dữ liệu mô tả dài khỏi các bảng nghiệp vụ chính để tối ưu hóa hiệu năng truy vấn.
+
+8. **Thực thể lịch sử bệnh án (`histories`):**
+   * Lưu lại thông tin kết luận chẩn đoán (`description`) và các tài liệu/hóa đơn dịch vụ cận lâm sàng đi kèm dưới dạng dữ liệu văn bản JSON (`files`) sau khi bác sĩ hoàn thành quy trình khám chữa bệnh cho Bệnh nhân.
 
 ---
 
