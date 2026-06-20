@@ -31,6 +31,11 @@ module.exports = (sequelize, DataTypes) => {
         token: DataTypes.STRING,
         reason: DataTypes.TEXT,
         isPaid: DataTypes.INTEGER,
+        weight: DataTypes.STRING,
+        height: DataTypes.STRING,
+        bloodPressure: DataTypes.STRING,
+        temperature: DataTypes.STRING,
+        symptoms: DataTypes.TEXT,
     }, {
         sequelize,
         modelName: 'Booking',

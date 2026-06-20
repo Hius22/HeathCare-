@@ -138,7 +138,10 @@ let createNewUser = (data) => {
             } else {
                 //console.log('Creating user with roleId:', data.roleId);
                 //console.log('Full data received:', data);
-                let hashPasswordFromBcrypt = await hashUserPassword(data.password);
+                let hashPasswordFromBcrypt = null;
+                if (data.password) {
+                    hashPasswordFromBcrypt = await hashUserPassword(data.password);
+                }
                 await db.User.create({
                     email: data.email,
                     password: hashPasswordFromBcrypt,
@@ -149,7 +152,8 @@ let createNewUser = (data) => {
                     gender: data.gender,
                     roleId: data.roleId,
                     positionId: data.positionId,
-                    image: data.avatar
+                    image: data.avatar,
+                    birthday: data.birthday
                 })
 
                 resolve({
@@ -211,6 +215,7 @@ let updateUserData = (data) => {
                 user.positionId = data.positionId || null;
                 user.gender = data.gender;
                 user.phonenumber = data.phonenumber;
+                user.birthday = data.birthday;
                 if (data.avatar) {
                     user.image = data.avatar;
                 }

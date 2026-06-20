@@ -98,6 +98,36 @@ let getNotificationsDoctor = async (req, res) => {
     }
 }
 
+let updatePatientInfo = async (req, res) => {
+    try {
+        let result = await patientService.updatePatientInfo(req.body);
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json({ errCode: -1, errMessage: 'Error from the server.' });
+    }
+}
+
+let getPatientByEmail = async (req, res) => {
+    try {
+        let result = await patientService.getPatientByEmail(req.query.email);
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json({ errCode: -1, errMessage: 'Error from the server.' });
+    }
+}
+
+let rescheduleBooking = async (req, res) => {
+    try {
+        let result = await patientService.rescheduleBooking(req.body);
+        return res.status(200).json(result);
+    } catch (e) {
+        console.log(e);
+        return res.status(500).json({ errCode: -1, errMessage: 'Error from the server.' });
+    }
+}
+
 module.exports = {
     postBookAppointment: postBookAppointment,
     postVerifyBookAppointment: postVerifyBookAppointment,
@@ -106,5 +136,8 @@ module.exports = {
     getPatientHistory: getPatientHistory,
     savePatientHistory: savePatientHistory,
     getNotifications: getNotifications,
-    getNotificationsDoctor: getNotificationsDoctor
+    getNotificationsDoctor: getNotificationsDoctor,
+    updatePatientInfo: updatePatientInfo,
+    getPatientByEmail: getPatientByEmail,
+    rescheduleBooking: rescheduleBooking
 }

@@ -161,8 +161,9 @@ let saveDetailInforDoctor = (inputData) => {
                 : (inputData.specialtyId ? [inputData.specialtyId] : []);
 
             // Build required fields check (allow specialtyId OR specialtyIds)
+            // selectedPayment is optional – if not provided, keep existing value in DB
             let arrFields = ['doctorId', 'contentHTML', 'contentMarkdown', 'action',
-                'selectedPrice', 'selectedProvince', 'selectedPayment', 'nameClinic', 'addressClinic', 'note'];
+                'selectedPrice', 'selectedProvince', 'nameClinic', 'addressClinic', 'note'];
             let isValid = true, element = '';
             for (let f of arrFields) {
                 if (!inputData[f]) { isValid = false; element = f; break; }
@@ -213,7 +214,10 @@ let saveDetailInforDoctor = (inputData) => {
             if (doctorInfor) {
                 doctorInfor.priceId = inputData.selectedPrice;
                 doctorInfor.provinceId = inputData.selectedProvince;
-                doctorInfor.paymentId = inputData.selectedPayment;
+                // Only update paymentId if provided; keep existing otherwise
+                if (inputData.selectedPayment) {
+                    doctorInfor.paymentId = inputData.selectedPayment;
+                }
                 doctorInfor.nameClinic = inputData.nameClinic;
                 doctorInfor.addressClinic = inputData.addressClinic;
                 doctorInfor.note = inputData.note;
@@ -392,6 +396,32 @@ let getScheduleByDate = (doctorId, date) => {
 
                 if (!dataSchedule) dataSchedule = [];
 
+                if (dataSchedule && dataSchedule.length > 0) {
+                    for (let i = 0; i < dataSchedule.length; i++) {
+                        let item = dataSchedule[i];
+                        let fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+                        let count = await db.Booking.count({
+                            where: {
+                                doctorId: doctorId,
+                                date: item.date,
+                                timeType: item.timeType,
+                                [Op.or]: [
+                                    { statusId: { [Op.in]: ['S2', 'S3'] } },
+                                    {
+                                        statusId: 'S1',
+                                        createdAt: { [Op.gte]: fiveMinutesAgo }
+                                    }
+                                ]
+                            }
+                        });
+                        if (item.setDataValue) {
+                            item.setDataValue('currentNumber', count);
+                        } else {
+                            item.currentNumber = count;
+                        }
+                    }
+                }
+
                 resolve({
                     errCode: 0,
                     data: dataSchedule
@@ -506,11 +536,16 @@ let getListPatientForDoctor = (doctorId, date) => {
                 });
             }
 
+            let fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
             let whereClause = {
-                statusId: {
-                    [Op.in]: ['S1', 'S2', 'S3', 'S4']
-                },
-                doctorId: doctorId
+                doctorId: doctorId,
+                [Op.or]: [
+                    { statusId: { [Op.in]: ['S2', 'S3', 'S4'] } },
+                    {
+                        statusId: 'S1',
+                        createdAt: { [Op.gte]: fiveMinutesAgo }
+                    }
+                ]
             };
 
             if (date && date !== 'all') {
@@ -539,11 +574,18 @@ let getListPatientForDoctor = (doctorId, date) => {
 
                 ],
                 order: [
+                    ['timeType', 'ASC'],
                     ['createdAt', 'ASC']
                 ],
                 raw: false,
                 nest: true
             });
+
+            if (data && data.length > 0) {
+                data.forEach((item, index) => {
+                    item.setDataValue('queueNumber', index + 1);
+                });
+            }
 
             resolve({
                 errCode: 0,
@@ -625,9 +667,7 @@ let cancelBooking = async (data) => {
                     patientId: data.patientId,
                     timeType: data.timeType,
                     date: data.date,
-                    statusId: {
-                        [Op.in]: ['S1', 'S2']
-                    }
+                    statusId: { [Op.in]: ['S1', 'S2'] }
                 }
             }
         );

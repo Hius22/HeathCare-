@@ -397,8 +397,249 @@ let getBodyHTMLEmailCancel = (dataSend) => {
 };
 
 
+let sendUpdateInfoEmail = async (dataSend) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            let transporter = nodemailer.createTransport({
+                host: "smtp.gmail.com",
+                port: 587,
+                secure: false,
+                auth: {
+                    user: process.env.EMAIL_APP,
+                    pass: process.env.EMAIL_APP_PASSWORD,
+                },
+            });
+
+            await transporter.sendMail({
+                from: '"CareDirect" <nguyenhuuhieu02022004@gmail.com>',
+                to: dataSend.receiverEmail,
+                subject: dataSend.language === 'vi'
+                    ? 'Xác nhận cập nhật thông tin cá nhân - CareDirect'
+                    : 'Personal Information Update Confirmation - CareDirect',
+                html: getBodyHTMLUpdateInfo(dataSend),
+            });
+
+            resolve();
+        } catch (e) {
+            reject(e);
+        }
+    });
+};
+
+let getBodyHTMLUpdateInfo = (dataSend) => {
+    let result = '';
+    if (dataSend.language === 'vi') {
+        result = `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #2d3748; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; margin-bottom: 24px;">
+                    <h1 style="color: #1a73e8; font-size: 26px; margin: 0; font-weight: 700; letter-spacing: -0.5px;">CareDirect</h1>
+                    <p style="font-size: 13px; color: #718096; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 1px;">Cập nhật thông tin cá nhân</p>
+                </div>
+
+                <div style="font-size: 15px; line-height: 1.6;">
+                    <h3 style="color: #2d3748; margin-top: 0; font-size: 18px; font-weight: 600;">Xin chào ${dataSend.patientName},</h3>
+                    <p style="color: #4a5568; margin-bottom: 20px;">Thông tin cá nhân của bạn trên hệ thống <b>CareDirect</b> đã được <b style="color: #1a73e8;">cập nhật thành công</b>. Dưới đây là thông tin mới nhất đã được ghi nhận:</p>
+
+                    <div style="background-color: #f0f7ff; border: 1px solid #bee3f8; border-left: 4px solid #1a73e8; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 12px 0; color: #2b6cb0; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Thông tin đã cập nhật:</h4>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; width: 120px; font-size: 14px;">Họ và tên:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.fullName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; font-size: 14px;">Số điện thoại:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.phoneNumber}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; font-size: 14px;">Địa chỉ:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.address}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; font-size: 14px;">Giới tính:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.gender}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div style="background-color: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 14px; margin-bottom: 24px;">
+                        <p style="margin: 0; font-size: 13px; color: #92400e;">
+                            <b>⚠ Lưu ý:</b> Nếu bạn không thực hiện thay đổi này, vui lòng liên hệ ngay với bộ phận hỗ trợ của chúng tôi để được xử lý kịp thời.
+                        </p>
+                    </div>
+
+                    <p style="color: #4a5568; margin-bottom: 16px;">Thông tin mới này sẽ được áp dụng cho tất cả các lịch hẹn hiện tại của bạn. Bác sĩ của bạn sẽ sử dụng các thông tin này trong quá trình khám bệnh.</p>
+                </div>
+
+                <div style="border-top: 1px solid #edf2f7; padding-top: 20px; font-size: 12px; color: #a0aec0; text-align: center; line-height: 1.5;">
+                    <p style="margin: 0 0 4px 0;">Cảm ơn bạn đã tin tưởng dịch vụ của chúng tôi!</p>
+                    <p style="margin: 0; font-weight: bold; color: #718096;">Hệ thống chăm sóc sức khỏe CareDirect</p>
+                </div>
+            </div>
+        `;
+    }
+    if (dataSend.language === 'en') {
+        result = `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #2d3748; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; margin-bottom: 24px;">
+                    <h1 style="color: #1a73e8; font-size: 26px; margin: 0; font-weight: 700; letter-spacing: -0.5px;">CareDirect</h1>
+                    <p style="font-size: 13px; color: #718096; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 1px;">Personal Information Update</p>
+                </div>
+
+                <div style="font-size: 15px; line-height: 1.6;">
+                    <h3 style="color: #2d3748; margin-top: 0; font-size: 18px; font-weight: 600;">Hello ${dataSend.patientName},</h3>
+                    <p style="color: #4a5568; margin-bottom: 20px;">Your personal information on the <b>CareDirect</b> system has been <b style="color: #1a73e8;">successfully updated</b>. Below are your latest recorded details:</p>
+
+                    <div style="background-color: #f0f7ff; border: 1px solid #bee3f8; border-left: 4px solid #1a73e8; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 12px 0; color: #2b6cb0; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Updated Information:</h4>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; width: 120px; font-size: 14px;">Full Name:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.fullName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; font-size: 14px;">Phone:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.phoneNumber}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; font-size: 14px;">Address:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.address}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; font-size: 14px;">Gender:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.gender}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div style="background-color: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 14px; margin-bottom: 24px;">
+                        <p style="margin: 0; font-size: 13px; color: #92400e;">
+                            <b>⚠ Notice:</b> If you did not make this change, please contact our support team immediately.
+                        </p>
+                    </div>
+
+                    <p style="color: #4a5568; margin-bottom: 16px;">This updated information will be applied to all your current appointments. Your doctor will use these details during your consultation.</p>
+                </div>
+
+                <div style="border-top: 1px solid #edf2f7; padding-top: 20px; font-size: 12px; color: #a0aec0; text-align: center; line-height: 1.5;">
+                    <p style="margin: 0 0 4px 0;">Thank you for choosing our service!</p>
+                    <p style="margin: 0; font-weight: bold; color: #718096;">CareDirect Healthcare System</p>
+                </div>
+            </div>
+        `;
+    }
+    return result;
+};
+
+let sendRescheduleEmail = async (dataSend) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            let transporter = nodemailer.createTransport({
+                host: "smtp.gmail.com",
+                port: 587,
+                secure: false,
+                auth: {
+                    user: process.env.EMAIL_APP,
+                    pass: process.env.EMAIL_APP_PASSWORD,
+                },
+            });
+
+            await transporter.sendMail({
+                from: '"CareDirect" <nguyenhuuhieu02022004@gmail.com>',
+                to: dataSend.email,
+                subject: dataSend.language === 'vi'
+                    ? 'Xác nhận thay đổi lịch hẹn khám bệnh - CareDirect'
+                    : 'Medical Appointment Reschedule Confirmation - CareDirect',
+                html: getBodyHTMLEmailReschedule(dataSend),
+            });
+
+            resolve();
+        } catch (e) {
+            reject(e);
+        }
+    });
+};
+
+let getBodyHTMLEmailReschedule = (dataSend) => {
+    let result = '';
+    if (dataSend.language === 'vi') {
+        result = `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #2d3748; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; margin-bottom: 24px;">
+                    <h1 style="color: #1a73e8; font-size: 26px; margin: 0; font-weight: 700; letter-spacing: -0.5px;">CareDirect</h1>
+                    <p style="font-size: 13px; color: #718096; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 1px;">Xác Nhận Thay Đổi Lịch Khám</p>
+                </div>
+                
+                <div style="font-size: 15px; line-height: 1.6;">
+                    <h3 style="color: #2d3748; margin-top: 0; font-size: 18px; font-weight: 600;">Xin chào ${dataSend.patientName},</h3>
+                    <p style="color: #4a5568; margin-bottom: 20px;">Lịch hẹn đặt khám bệnh của bạn trên hệ thống <b>CareDirect</b> đã được <b>thay đổi thành công</b>.</p>
+                    
+                    <div style="background-color: #f7fafc; border: 1px solid #edf2f7; border-left: 4px solid #1a73e8; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 12px 0; color: #2d3748; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Thông tin lịch khám mới:</h4>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; width: 100px; font-size: 14px;">Bác sĩ:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.doctorName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; font-size: 14px;">Thời gian mới:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.time}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <p style="color: #4a5568; margin-bottom: 24px;">Vui lòng có mặt trước giờ khám 10-15 phút tại quầy lễ tân để tiến hành tiếp đón khám bệnh.</p>
+                </div>
+                
+                <div style="border-top: 1px solid #edf2f7; padding-top: 20px; font-size: 12px; color: #a0aec0; text-align: center; line-height: 1.5;">
+                    <p style="margin: 0 0 4px 0;">Cảm ơn bạn đã tin tưởng dịch vụ của chúng tôi!</p>
+                    <p style="margin: 0; font-weight: bold; color: #718096;">Hệ thống chăm sóc sức khỏe CareDirect</p>
+                </div>
+            </div>
+        `;
+    } else {
+        result = `
+            <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #2d3748; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #edf2f7; margin-bottom: 24px;">
+                    <h1 style="color: #1a73e8; font-size: 26px; margin: 0; font-weight: 700; letter-spacing: -0.5px;">CareDirect</h1>
+                    <p style="font-size: 13px; color: #718096; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 1px;">Appointment Rescheduled Confirmation</p>
+                </div>
+                
+                <div style="font-size: 15px; line-height: 1.6;">
+                    <h3 style="color: #2d3748; margin-top: 0; font-size: 18px; font-weight: 600;">Dear ${dataSend.patientName},</h3>
+                    <p style="color: #4a5568; margin-bottom: 20px;">Your medical appointment on the <b>CareDirect</b> system has been <b>successfully rescheduled</b>.</p>
+                    
+                    <div style="background-color: #f7fafc; border: 1px solid #edf2f7; border-left: 4px solid #1a73e8; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 12px 0; color: #2d3748; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">New Appointment Details:</h4>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; width: 100px; font-size: 14px;">Doctor:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.doctorName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 6px 0; color: #718096; font-size: 14px;">New Time:</td>
+                                <td style="padding: 6px 0; color: #2d3748; font-weight: bold; font-size: 15px;">${dataSend.time}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <p style="color: #4a5568; margin-bottom: 24px;">Please arrive 10-15 minutes prior to your new scheduled time at the reception desk for check-in.</p>
+                </div>
+                
+                <div style="border-top: 1px solid #edf2f7; padding-top: 20px; font-size: 12px; color: #a0aec0; text-align: center; line-height: 1.5;">
+                    <p style="margin: 0 0 4px 0;">Thank you for your trust in our service!</p>
+                    <p style="margin: 0; font-weight: bold; color: #718096;">CareDirect Healthcare System</p>
+                </div>
+            </div>
+        `;
+    }
+    return result;
+};
+
 module.exports = {
     sendSimpleEmail: sendSimpleEmail,
     sendAttachment: sendAttachment,
-    sendCancelEmail: sendCancelEmail
+    sendCancelEmail: sendCancelEmail,
+    sendUpdateInfoEmail: sendUpdateInfoEmail,
+    sendRescheduleEmail: sendRescheduleEmail
 }
